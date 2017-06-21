@@ -11,6 +11,7 @@ cd cube_config_linux
 ## Example workflow
 
 ### Configuring SD card for recording
+Find device name of the SD card:
 ```
 dmesg | tail -n 10
 ```
@@ -25,7 +26,9 @@ sudo ./card_enable /dev/sdc
 Check the console output to confirm success
 
 ### Extracting the data
-sudo ./sd\_card\_extract /dev/sdc install_\_06-21-2017\_sd07.dat 
+```
+sudo ./sd\_card\_extract /dev/sdc install\_06-21-2017\_sd07.dat 
+```
 
 Other utilities such as read\_config and pcheck can be used to inspect the 
 current configuration on the card and packet information, respectively
