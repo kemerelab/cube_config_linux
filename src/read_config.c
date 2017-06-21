@@ -21,14 +21,14 @@
 //////////////////////////////////////////////////////////////////////////
 int main (int argc, char *argv[])
 {
-    char device_fname[MAX_FNAME_LENGTH];
-    char output_fname[MAX_FNAME_LENGTH];
+    char deviceFile[MAX_FNAME_LENGTH];
+    char outputFile[MAX_FNAME_LENGTH];
     int readDiskRes, deviceInfoRes, fileAccessRes;
     int i, j, count;
     uint8_t buff[BUFFER_LENGTH];
     DeviceInfoType deviceInfo;
     FilePermissionType permission;
-    FILE *output_fp;
+    FILE *fpOutfile;
     
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
@@ -37,9 +37,11 @@ int main (int argc, char *argv[])
     fprintf(stdout, "\n*** read_config 1.0 ***\n");
 
     if ( 1 == argc) {
-        fprintf(stdout, "\nUsage: read_config <device file> <output file>\n");
-        fprintf(stdout, "<output file> is optional\n");
-        fprintf(stdout, "Example: `read_config /dev/sdb config_file.cfg`\n");
+        fprintf(stdout, "\nUsage: read_config [DEVICE_FILENAME] ...\n");
+        fprintf(stdout, "Example: `read_config /dev/sdb`\n");
+        fprintf(stdout, "You can also specify an optional output file"
+                " that will contain the current configuration on the card.\n");
+        fprintf(stdout, "Example: `read_config /dev/sdb current_config.cfg`\n");
         return 1;
     }
     else if ( 1 < argc ) {
@@ -49,19 +51,19 @@ int main (int argc, char *argv[])
         }
 
         // check file name length
-        strncpy(device_fname, argv[1], MAX_FNAME_LENGTH);
-        if ( '\0' != device_fname[MAX_FNAME_LENGTH-1] ) {
+        strncpy(deviceFile, argv[1], MAX_FNAME_LENGTH);
+        if ( '\0' != deviceFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum device file name length exceeded.\n");
             return -1;
         }
 
         // check file existence and permissions
         permission = READ_ACCESS;
-        fileAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        fileAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( fileAccessRes ) {
             fprintf(stderr, "\nError checking read permission of %s: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
-                    device_fname,
+                    deviceFile,
                     fileAccessRes);
             return -2;
         }
@@ -70,7 +72,7 @@ int main (int argc, char *argv[])
         // have gotten strange results when using uninitialized deviceInfo so 
         // initialize here. In general it never hurts to initialize anyway  
         memset(&deviceInfo, 0, sizeof(deviceInfo));
-        deviceInfoRes = DISKIO_iGetDeviceInfo(device_fname, &deviceInfo);
+        deviceInfoRes = DISKIO_iGetDeviceInfo(deviceFile, &deviceInfo);
         if ( deviceInfoRes ) {
             fprintf(stderr, "\nError checking device info: return value"
                     " of DISKIO_iGetDeviceInfo() is %d\n",
@@ -79,7 +81,7 @@ int main (int argc, char *argv[])
         }
 
         // read configuration sector
-        readDiskRes = DISKIO_iReadDisk(device_fname, buff, 0, 1, &deviceInfo);
+        readDiskRes = DISKIO_iReadDisk(deviceFile, buff, 0, 1, &deviceInfo);
         if ( readDiskRes ) {
             fprintf(stderr, "\nError reading configuration sector: "
                     "return value of DISKIO_iReadDisk() is %d\n",
@@ -111,30 +113,30 @@ int main (int argc, char *argv[])
 
         // Write to output file the configuration that was on the card
         if ( 3 == argc ) {
-            strncpy(output_fname, argv[2], MAX_FNAME_LENGTH);
-            if ( '\0' != output_fname[MAX_FNAME_LENGTH-1] ) {
+            strncpy(outputFile, argv[2], MAX_FNAME_LENGTH);
+            if ( '\0' != outputFile[MAX_FNAME_LENGTH-1] ) {
                 fprintf(stderr, "\nMaximum output file name length exceeded.\n");
                 return -5;
             }
-            output_fp = fopen(output_fname, "w");
-            if ( NULL == output_fp ) {
+            fpOutfile = fopen(outputFile, "w");
+            if ( NULL == fpOutfile ) {
                 fprintf(stderr, "\nError no %d opening output file %s: %s." 
                         " Please try again\n", 
-                        errno, output_fname, strerror(errno));
+                        errno, outputFile, strerror(errno));
                 return -6;
             }
             for (i = 0; i < NUM_CHANNELS_PER_MODULE; i++) {
                 for (j = (NUM_MODULES -1); j >= 0; j--) {
                     if ((buff[i] >> j) & 0x01) {
-                            fprintf(output_fp, "1");
+                            fprintf(fpOutfile, "1");
                         }
                         else {
-                            fprintf(output_fp,"0");
+                            fprintf(fpOutfile,"0");
                         }
                     }
-                fprintf(output_fp,"\n");
+                fprintf(fpOutfile,"\n");
             }
-            fclose(output_fp);
+            fclose(fpOutfile);
         }
 
         fprintf(stdout, "Configuration read successfully!\n");

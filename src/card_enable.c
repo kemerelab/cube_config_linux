@@ -17,8 +17,8 @@
 //////////////////////////////////////////////////////////////////////////
 int main (int argc, char *argv[])
 {
-    char device_fname[MAX_FNAME_LENGTH];
-    char output_fname[MAX_FNAME_LENGTH];
+    char deviceFile[MAX_FNAME_LENGTH];
+    char outputFile[MAX_FNAME_LENGTH];
     int readDiskRes, writeDiskRes;
     int readAccessRes, writeAccessRes, deviceInfoRes;
     int i, j;
@@ -34,7 +34,7 @@ int main (int argc, char *argv[])
     fprintf(stdout, "\n*** card_enable 1.0 ***\n");
 
     if ( 1 == argc) {
-        fprintf(stdout, "\nUsage: card_enable <device file>\n");
+        fprintf(stdout, "\nUsage: card_enable [DEVICE_FILENAME]\n");
         fprintf(stdout, "Example: `card_enable /dev/sdb`\n");
         return 1;
     }
@@ -45,15 +45,15 @@ int main (int argc, char *argv[])
         }
 
         // check file name length
-        strncpy(device_fname, argv[1], MAX_FNAME_LENGTH);
-        if ( '\0' != device_fname[MAX_FNAME_LENGTH-1] ) {
+        strncpy(deviceFile, argv[1], MAX_FNAME_LENGTH);
+        if ( '\0' != deviceFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum device file name length exceeded.\n");
             return -1;
         }
 
         // check file permissions
         permission = READ_ACCESS;
-        readAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        readAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( readAccessRes ) {
             fprintf(stderr, "\nError checking read permission: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
@@ -61,7 +61,7 @@ int main (int argc, char *argv[])
             return -2;
         }
         permission = WRITE_ACCESS;
-        writeAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        writeAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( writeAccessRes ) {
             fprintf(stderr, "\nError checking read permission: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
@@ -73,7 +73,7 @@ int main (int argc, char *argv[])
         // have gotten strange results when using uninitialized deviceInfo so 
         // initialize here. In general it never hurts to initialize anyway  
         memset(&deviceInfo, 0, sizeof(deviceInfo));
-        deviceInfoRes = DISKIO_iGetDeviceInfo(device_fname, &deviceInfo);
+        deviceInfoRes = DISKIO_iGetDeviceInfo(deviceFile, &deviceInfo);
         if ( deviceInfoRes ) {
             fprintf(stderr, "\nError checking device info: return value"
                     " of DISKIO_iGetDeviceInfo() is %d\n",
@@ -86,7 +86,7 @@ int main (int argc, char *argv[])
         for (i = 0; i < deviceInfo.sectorSize; i++) {
             buff[i] = 0xaa;
         }
-        writeDiskRes = DISKIO_iWriteDisk(device_fname, buff, 1, 1, &deviceInfo);
+        writeDiskRes = DISKIO_iWriteDisk(deviceFile, buff, 1, 1, &deviceInfo);
         if ( writeDiskRes ) {
         	fprintf(stderr, "\nError enabling card for recording: "
         		    "return value of DISKIO_iWriteDisk() is %d\n",
@@ -96,7 +96,7 @@ int main (int argc, char *argv[])
 
         // confirm that card was enabled for recording successfully
         fprintf(stdout, "\nConfirming that card was enabled successfully\n");
-        readAccessRes = DISKIO_iReadDisk(device_fname, buff, 1, 1, &deviceInfo);
+        readAccessRes = DISKIO_iReadDisk(deviceFile, buff, 1, 1, &deviceInfo);
         if ( readAccessRes ) {
         	fprintf(stderr, "\nError confirming that card was enabled successfully: "
         		    "return value of DISKIO_iReadDisk() is %d\n", 

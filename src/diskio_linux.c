@@ -32,26 +32,26 @@ int DISKIO_iCheckFileAccess(char *filename, FilePermissionType permission) {
             if ( -1 == access(filename, R_OK) ) {
                 fprintf(stderr, "\nYou do not have read permission for file %s! "
                         "Try using sudo\n", filename);
-                return -1;
+                return -2;
             }
                 break;
         case WRITE_ACCESS:
             if ( -1 == access(filename, W_OK) ) {
                 fprintf(stderr, "\nYou do not have write permission for file %s! "
                         "Try using sudo\n", filename);
-                return -2;
+                return -3;
             }
                 break;
         case EXECUTE_ACCESS:
             if ( -1 == access(filename, X_OK) ) {
                 fprintf(stderr, "\nYou do not have execute permission for file %s! "
                         "Try using sudo\n", filename);
-                return -3;
+                return -4;
             }
             break;
         default:
             fprintf(stderr, "\nInvalid parameter!\n");
-            return -4;
+            return -5;
             break;
     }
 
@@ -68,37 +68,37 @@ int DISKIO_iCheckFileAccess(char *filename, FilePermissionType permission) {
 //////////////////////////////////////////////////////////////////////////
 int DISKIO_iGetDeviceInfo(char *filename, DeviceInfoType *deviceInfoObj) {
 
-    int device_fd;
+    int fdDevice;
 
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
 
     fprintf(stdout, "\nGetting info from device %s ...\n", filename);
-    device_fd = open(filename, O_RDONLY|O_NONBLOCK);
-    if ( -1 == device_fd ) {
+    fdDevice = open(filename, O_RDONLY|O_NONBLOCK);
+    if ( -1 == fdDevice ) {
         fprintf(stderr, "\nError %d opening device: %s \n",
                 errno, strerror(errno) );
-        return -3;
-    }
-        
-    if ( -1 == ioctl(device_fd, BLKSSZGET, &(deviceInfoObj->sectorSize)) ) {
-        fprintf(stderr, "\nError getting sector size!\n");
-        fprintf(stderr, "Error %d: %s \n", errno, strerror(errno));
         return -1;
     }
-    else if ( -1 == ioctl(device_fd, BLKGETSIZE64, &(deviceInfoObj->deviceSize)) ) {
-        fprintf(stderr, "\nError getting device size\n!");
+        
+    if ( -1 == ioctl(fdDevice, BLKSSZGET, &(deviceInfoObj->sectorSize)) ) {
+        fprintf(stderr, "\nError getting sector size!\n");
         fprintf(stderr, "Error %d: %s \n", errno, strerror(errno));
         return -2;
+    }
+    else if ( -1 == ioctl(fdDevice, BLKGETSIZE64, &(deviceInfoObj->deviceSize)) ) {
+        fprintf(stderr, "\nError getting device size\n!");
+        fprintf(stderr, "Error %d: %s \n", errno, strerror(errno));
+        return -3;
     }
     // no errors getting device info
     else {
         deviceInfoObj->sectorCount = deviceInfoObj->deviceSize / deviceInfoObj->sectorSize;
-        fprintf(stdout, "Device is %llu bytes = %.2f MiB = %.2f GiB large \n",
+        fprintf(stdout, "Device is %llu bytes = %.2f MB = %.2f GB large \n",
                 (long long unsigned)deviceInfoObj->deviceSize,
-                (double)(deviceInfoObj->deviceSize/1024.0/1024.0),
-                (double)(deviceInfoObj->deviceSize/1024.0/1024.0/1024.0) );
+                (double)(deviceInfoObj->deviceSize/1000.0/1000.0),
+                (double)(deviceInfoObj->deviceSize/1000.0/1000.0/1000.0) );
         fprintf(stdout, "Sector info: %llu bytes/sector, %llu sectors\n\n", 
                 (long long unsigned)deviceInfoObj->sectorSize, 
                 (long long unsigned)deviceInfoObj->sectorCount );
@@ -106,7 +106,7 @@ int DISKIO_iGetDeviceInfo(char *filename, DeviceInfoType *deviceInfoObj) {
     } 
 
     // done getting device info, time to close
-    if ( close(device_fd) ) {
+    if ( close(fdDevice) ) {
         // don't really care if there's an error closing device because it can
         // still be considered effectively closed, but it's good practice to 
         // check for errors anyway
@@ -136,36 +136,36 @@ int DISKIO_iReadDisk(char *filename, uint8_t *buff, uint32_t sector,
 
     long int offset;
     uint64_t bytesExpected, bytesRead;
-    FILE *device_fp;
+    FILE *fpDevice;
 
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
     
-    device_fp = fopen(filename, "r");
-    if ( NULL == device_fp ) {
+    fpDevice = fopen(filename, "r");
+    if ( NULL == fpDevice ) {
         fprintf(stderr, "\nCould not open %s to read!", filename);
-        return -3;
+        return -1;
     }
         
     fprintf(stdout, "\nReading from %s ...\n", filename);
     offset = (long int)(sector * deviceInfoObj->sectorSize);
-    if ( fseek(device_fp, offset, SEEK_SET) ) {
+    if ( fseek(fpDevice, offset, SEEK_SET) ) {
         fprintf(stderr, "\nError finding sectors to read!\n");
-        return -1;
+        return -2;
     }
     bytesExpected = numSectors * deviceInfoObj->sectorSize;
-    bytesRead = (uint64_t)fread(buff, sizeof(uint8_t), bytesExpected, device_fp);
+    bytesRead = (uint64_t)fread(buff, sizeof(uint8_t), bytesExpected, fpDevice);
     if ( bytesExpected != bytesRead ) {
         fprintf(stderr, "\nError: %llu bytes read but expected number of bytes is %llu\n"
                 "Please try again.",
                 (long long unsigned)bytesRead,
                 (long long unsigned)bytesExpected );
-        return -2;
+        return -3;
     }
 
     // done reading, time to close
-    if ( fclose(device_fp) ) {
+    if ( fclose(fpDevice) ) {
         fprintf(stderr, "\nError closing file %s", filename);
         return -4;
     }
@@ -190,35 +190,35 @@ int DISKIO_iWriteDisk(char *filename, uint8_t *buff, uint32_t sector, uint32_t n
 
     long int offset;
     uint64_t bytesExpected, bytesWritten;
-    FILE *device_fp;
+    FILE *fpDevice;
 
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
     
-    device_fp = fopen(filename, "w");
-    if ( NULL == device_fp ) {
+    fpDevice = fopen(filename, "w");
+    if ( NULL == fpDevice ) {
         fprintf(stderr, "\nCould not open %s to write!\n", filename);
-        return -3;
+        return -1;
     }
     fprintf(stdout, "\nWriting to %s ...\n", filename);
     offset = (long int)(sector * deviceInfoObj->sectorSize);
-    if ( fseek(device_fp, offset, SEEK_SET) ) {
+    if ( fseek(fpDevice, offset, SEEK_SET) ) {
         fprintf(stderr, "\nError finding sectors to write!\n");
-        return -1;
+        return -2;
     }
     bytesExpected = numSectors * deviceInfoObj->sectorSize;
-    bytesWritten = (uint64_t)fwrite(buff, sizeof(uint8_t), bytesExpected, device_fp);
+    bytesWritten = (uint64_t)fwrite(buff, sizeof(uint8_t), bytesExpected, fpDevice);
     if ( bytesExpected != bytesWritten ) {
         fprintf(stderr, "\nError: %llu bytes written but expected number of bytes is %llu\n"
                 "Please try again.",
                 (long long unsigned)bytesWritten,
                 (long long unsigned)bytesExpected );
-        return -2;
+        return -3;
     }
     
     // done reading, time to close
-    if ( fclose(device_fp) ) {
+    if ( fclose(fpDevice) ) {
         fprintf(stderr, "\nError closing file %s\n", filename);
         return -4;
     }
@@ -240,7 +240,7 @@ int DISKIO_iWriteDisk(char *filename, uint8_t *buff, uint32_t sector, uint32_t n
 //                                               device information
 // Returns     : int - 0 if success, negative value otherwise
 //////////////////////////////////////////////////////////////////////////
-int DISKIO_iReadPacket(FILE *device_fp, uint8_t *buff, uint64_t startPacketIndex, 
+int DISKIO_iReadPacket(FILE *fpDevice, uint8_t *buff, uint64_t startPacketIndex, 
                        uint16_t packetSize, uint64_t numPackets,
                        DeviceInfoType *deviceInfoObj) {
 
@@ -252,31 +252,21 @@ int DISKIO_iReadPacket(FILE *device_fp, uint8_t *buff, uint64_t startPacketIndex
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
 
-    // Adding 1 because we start reading packets after the first sector
-    // (the configuration sector)
-    startSector = (long int)(startPacketIndex * packetSize / deviceInfoObj->sectorSize + 1);
-    offset = (long int)((startPacketIndex * packetSize) % deviceInfoObj->sectorSize );
-
-    // position file pointer to correct sector, then move the pointer to 
-    // any additional offset from there. Faster than doing 
-    // fseek(fp, deviceInfo->sectorSize + startPacketIndex * packetSize, SEEK_SET)
-    if ( fseek(device_fp, startSector, SEEK_SET) ) {
+    // position file pointer to correct byte
+    if ( fseek(fpDevice, deviceInfoObj->sectorSize 
+                         + startPacketIndex * packetSize, SEEK_SET) ) {
         fprintf(stderr, "Error setting file pointer to read packets\n");
         return -1;
     }
-    if ( fseek(device_fp, offset, SEEK_CUR) ) {
-        fprintf(stderr, "Error setting file pointer to read packets\n");
-        return -2;
-    }
 
     numPacketsRead = (uint64_t)fread(buff, sizeof(uint8_t) * packetSize,  
-                                     numPackets, device_fp);
+                                     numPackets, fpDevice);
     if ( numPacketsRead != numPackets ) {
         fprintf(stderr, "Error reading packets: %llu packets requested but"
                " %llu packets read", 
                (long long unsigned)numPackets,
                (long long unsigned)numPacketsRead);
-        return -3;
+        return -2;
     }
 
     return 0;

@@ -1,15 +1,31 @@
-# cube_config_linux # 
+# cube\_config\_linux
 
-This repository contains source code for Linux-compatible SD card utilities using SpikeGadgets 
-wireless recording hardware. 
+Please see the readme in the doc directory for more detailed usage of the SD card utilities. You can also run the executable with no arguments to see the help/usage menu. 
 
-## Building from source ##
-The executables are already provided, but you can always build from source if you'd like. Since 
-these are small programs, it's quick and easy to call gcc directly.
+## Installation
+```
+git clone https://github.com/kemerelab/cube_config_linux.git
+cd cube_config_linux
+./compile_all.sh
+```
+## Example workflow
 
-All of the utilities use the functions defined in diskio.c so be sure to include this as 
-an input file for gcc if you're building from source.
+### Configuring SD card for recording
+```
+dmesg | tail -n 10
+```
 
-Example:
+On my machine, the SD card is /dev/sdc. It may be different for yours.
 
-```gcc write_config.c diskio.c -o write_config```
+```
+sudo ./write_config /dev/sdc config128.cfg
+sudo ./card_enable /dev/sdc
+```
+
+Check the console output to confirm success
+
+### Extracting the data
+sudo ./sd\_card\_extract /dev/sdc install_\_06-21-2017\_sd07.dat 
+
+Other utilities such as read\_config and pcheck can be used to inspect the 
+current configuration on the card and packet information, respectively

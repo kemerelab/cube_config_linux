@@ -19,16 +19,16 @@
 //////////////////////////////////////////////////////////////////////////
 int main (int argc, char *argv[])
 {
-    char device_fname[MAX_FNAME_LENGTH];
-    int readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
+    char deviceFile[MAX_FNAME_LENGTH];
+    int i, readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
     uint8_t buff[BUFFER_LENGTH];
-    uint32_t i, shift, psize;
+    uint32_t shift, psize;
     uint64_t lastPacket, maxNumPackets;
     uint64_t nDroppedPackets, timestampPacketIndexDiff;
     uint64_t nDroppedPacketsCounted, packetIndex;
     FilePermissionType permission;
     DeviceInfoType deviceInfo;
-    FILE *device_fp;
+    FILE *fpDevice;
   
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
@@ -37,7 +37,7 @@ int main (int argc, char *argv[])
 	fprintf(stdout, "\n*** pcheck 1.3 ***\n");
 
     if ( 1 == argc) {
-        fprintf(stdout, "\nUsage: pcheck <device file>\n");
+        fprintf(stdout, "\nUsage: pcheck [DEVICE_FILENAME]\n");
         fprintf(stdout, "Example: `pcheck /dev/sdb`\n");
         return 1;
     }
@@ -48,15 +48,15 @@ int main (int argc, char *argv[])
         }
 
         // check file name length
-        strncpy(device_fname, argv[1], MAX_FNAME_LENGTH);
-        if ( '\0' != device_fname[MAX_FNAME_LENGTH-1] ) {
+        strncpy(deviceFile, argv[1], MAX_FNAME_LENGTH);
+        if ( '\0' != deviceFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum device file name length exceeded.\n");
             return -1;
         }
 
         // check file permissions
         permission = READ_ACCESS;
-        readAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        readAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( 0 != readAccessRes ) {
             fprintf(stderr, "\nError checking read permission: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
@@ -68,7 +68,7 @@ int main (int argc, char *argv[])
         // have gotten strange results when using uninitialized deviceInfo so 
         // initialize here. In general it never hurts to initialize anyway  
         memset(&deviceInfo, 0, sizeof(deviceInfo));
-        deviceInfoRes = DISKIO_iGetDeviceInfo(device_fname, &deviceInfo);
+        deviceInfoRes = DISKIO_iGetDeviceInfo(deviceFile, &deviceInfo);
         if ( 0 != deviceInfoRes ) {
             fprintf(stderr, "\nError checking device info: return value"
                     " of DISKIO_iGetDevice() is %d\n",
@@ -77,7 +77,7 @@ int main (int argc, char *argv[])
         }        
 
         // read second and third sectors (first sector is configuration info)
-        readDiskRes = DISKIO_iReadDisk(device_fname, buff, 1, 2, &deviceInfo);
+        readDiskRes = DISKIO_iReadDisk(deviceFile, buff, 1, 2, &deviceInfo);
         if ( 0 != readDiskRes ) {
             fprintf(stderr, "\nError reading from device: "
                     "return value of DISKIO_iReadDisk() is %d\n", readDiskRes);
@@ -101,18 +101,20 @@ int main (int argc, char *argv[])
             psize = i;
         }
 
-        device_fp = fopen(device_fname, "r");
-        if ( NULL == device_fp ) {
-            fprintf(stderr, "Could not open %s to check packets!\n", device_fname);
+        fpDevice = fopen(deviceFile, "r");
+        if ( NULL == fpDevice ) {
+            fprintf(stderr, "Could not open %s to check packets!\n", deviceFile);
             return -7;
         }
 
         fprintf(stdout, "Packet size: %u bytes/packet\n", (unsigned)psize);
 
-        // Maximum packets is device size - size of one sector 
+        // Maximum packets is device size - size of one sector (one sector used to set
+        // the configuration)
         maxNumPackets = ( (deviceInfo.sectorCount -1) * deviceInfo.sectorSize)/psize;
-        fprintf(stdout, "Maximum packets on the disk = %llu\n",
-                (long long unsigned)maxNumPackets);
+        fprintf(stdout, "Maximum packets on the disk = %llu (%.2f minutes) \n",
+                (long long unsigned)maxNumPackets, 
+                (double)(maxNumPackets)/SAMPLING_RATE/60.0 );
 
         lastPacket = 1;
         shift = 0;
@@ -128,7 +130,7 @@ int main (int argc, char *argv[])
                 lastPacket &= ~(1<<i);
                 continue;
             }
-            readPacketRes = DISKIO_iReadPacket(device_fp, buff, 
+            readPacketRes = DISKIO_iReadPacket(fpDevice, buff, 
                                                lastPacket, psize, 1,
                                                &deviceInfo);
             if ( readPacketRes ) {
@@ -153,8 +155,10 @@ int main (int argc, char *argv[])
             lastPacket--;
         }
 
-        fprintf(stdout, "Packets recorded on the disk = %lu\n", (long unsigned)(lastPacket + 1) );
-        readPacketRes = DISKIO_iReadPacket(device_fp, buff, lastPacket, psize, 1, &deviceInfo);
+        fprintf(stdout, "Packets recorded on the disk = %lu (%.2f minutes)\n", 
+                (long unsigned)(lastPacket + 1), 
+                (double)(lastPacket + 1)/SAMPLING_RATE/60.0 );
+        readPacketRes = DISKIO_iReadPacket(fpDevice, buff, lastPacket, psize, 1, &deviceInfo);
         if (readPacketRes) {
             fprintf(stderr, "\nError reading last packet recorded on disk: return value"
                     " of DISKIO_iReadPacket() is %d\n", readPacketRes);
@@ -179,7 +183,7 @@ int main (int argc, char *argv[])
                         packetIndex &= ~(1<<i);
                         continue;
                     }
-                    readPacketRes = DISKIO_iReadPacket(device_fp, buff, packetIndex,
+                    readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex,
                                                        psize, 1, &deviceInfo);
                     if ( readPacketRes ) {
                         fprintf(stderr, "Error reading packet %llu, return value of"
@@ -195,7 +199,7 @@ int main (int argc, char *argv[])
                         }
                     }
                 }
-                readPacketRes = DISKIO_iReadPacket(device_fp, buff, packetIndex + 1, 
+                readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex + 1, 
                                                    psize, 1, &deviceInfo);
                 if ( readPacketRes ) {
                     fprintf(stderr, "Error reading packet %llu, return value of"
@@ -216,8 +220,8 @@ int main (int argc, char *argv[])
         else { 
             fprintf(stdout, "No dropped packets\n");
         }
-        if ( fclose(device_fp) ) {
-            fprintf(stderr, "Error closing %s after reading packets\n", device_fname);
+        if ( fclose(fpDevice) ) {
+            fprintf(stderr, "Error closing %s after reading packets\n", deviceFile);
             return -10;
         }
         return 0; 

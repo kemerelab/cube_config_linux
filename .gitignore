@@ -5,3 +5,7 @@
 *.docx
 *.docx#
 
+# sd card recordings
+*.dat
+
+bin/

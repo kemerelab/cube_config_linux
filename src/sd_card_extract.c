@@ -7,6 +7,7 @@
 #define BUFFER_LENGTH 65536
 #define MAX_FNAME_LENGTH 1000
 #define NUM_PACKETS 128       // number of packets to read at a time
+#define PACKET_PROGRESS 16777216
 #define SAMPLING_RATE 30000   // samples/sec
 
 //////////////////////////////////////////////////////////////////////////
@@ -19,18 +20,18 @@
 //////////////////////////////////////////////////////////////////////////
 int main (int argc, char *argv[])
 {
-    char device_fname[MAX_FNAME_LENGTH];
-    char output_fname[MAX_FNAME_LENGTH];
-    int readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
+    char deviceFile[MAX_FNAME_LENGTH];
+    char outputFile[MAX_FNAME_LENGTH];
+    int i, readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
     uint8_t buff[BUFFER_LENGTH];
-    uint32_t i, shift, psize;
+    uint32_t shift, psize;
     uint64_t bytesWritten;
     uint64_t lastPacket, maxNumPackets;
     uint64_t nDroppedPackets;
     uint64_t nDroppedPacketsCounted, packetIndex;
     FilePermissionType permission;
     DeviceInfoType deviceInfo;
-    FILE *device_fp, *output_fp;
+    FILE *fpDevice, *fpOutput;
 
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
@@ -39,7 +40,8 @@ int main (int argc, char *argv[])
     fprintf(stdout, "\n*** sd_card_extract 1.0 ***\n");
 
     if ( 1 == argc) {
-        fprintf(stdout, "\nUsage: sd_card_extract <device file> <extracted data file>\n");
+        fprintf(stdout, "\nUsage: sd_card_extract [DEVICE_FILENAME]" 
+                " [EXTRACTED_DATA_FILENAME]\n");
         fprintf(stdout, "Example: `sd_card_extract /dev/sdb extracted_data.dat`\n");
         return 1;
     }
@@ -54,20 +56,20 @@ int main (int argc, char *argv[])
         }
 
         // check file name lengths
-        strncpy(device_fname, argv[1], MAX_FNAME_LENGTH);
-        strncpy(output_fname, argv[2], MAX_FNAME_LENGTH);
-        if ( '\0' != device_fname[MAX_FNAME_LENGTH-1] ) {
+        strncpy(deviceFile, argv[1], MAX_FNAME_LENGTH);
+        strncpy(outputFile, argv[2], MAX_FNAME_LENGTH);
+        if ( '\0' != deviceFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum device file name length exceeded.\n");
             return -2;
         }
-        if ( '\0' != output_fname[MAX_FNAME_LENGTH-1] ) {
+        if ( '\0' != outputFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum output file name length exceeded.\n");
             return -3;
         }
 
         // check file permissions
         permission = READ_ACCESS;
-        readAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        readAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( 0 != readAccessRes ) {
             fprintf(stderr, "\nError checking read permission: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
@@ -79,7 +81,7 @@ int main (int argc, char *argv[])
         // have gotten strange results when using uninitialized deviceInfo so 
         // initialize here. In general it never hurts to initialize anyway  
         memset(&deviceInfo, 0, sizeof(deviceInfo));
-        deviceInfoRes = DISKIO_iGetDeviceInfo(device_fname, &deviceInfo);
+        deviceInfoRes = DISKIO_iGetDeviceInfo(deviceFile, &deviceInfo);
         if ( 0 != deviceInfoRes ) {
             fprintf(stderr, "\nError checking device info: return value"
                     " of DISKIO_iGetDevice() is %d\n",
@@ -88,7 +90,7 @@ int main (int argc, char *argv[])
         }        
 
         // read second and third sectors (first sector is configuration info)
-        readDiskRes = DISKIO_iReadDisk(device_fname, buff, 1, 2, &deviceInfo);
+        readDiskRes = DISKIO_iReadDisk(deviceFile, buff, 1, 2, &deviceInfo);
         if ( 0 != readDiskRes ) {
             fprintf(stderr, "\nError reading from device: "
                     "return value of DISKIO_iReadDisk() is %d\n", readDiskRes);
@@ -112,9 +114,9 @@ int main (int argc, char *argv[])
             psize = i;
         }
 
-        device_fp = fopen(device_fname, "r");
-        if ( NULL == device_fp ) {
-            fprintf(stderr, "Could not open %s to extract data!\n", device_fname);
+        fpDevice = fopen(deviceFile, "r");
+        if ( NULL == fpDevice ) {
+            fprintf(stderr, "Could not open %s to extract data!\n", deviceFile);
             return -8;
         }
 
@@ -122,8 +124,9 @@ int main (int argc, char *argv[])
 
         // Maximum packets is device size - size of one sector 
         maxNumPackets = ( (deviceInfo.sectorCount -1) * deviceInfo.sectorSize)/psize;
-        fprintf(stdout, "Maximum packets on the disk = %llu\n",
-                (long long unsigned)maxNumPackets);
+        fprintf(stdout, "Maximum packets on the disk = %llu (%.2f minutes)\n",
+                (long long unsigned)maxNumPackets,
+                (double)maxNumPackets/SAMPLING_RATE/60.0 );
 
         lastPacket = 1;
         shift = 0;
@@ -139,7 +142,7 @@ int main (int argc, char *argv[])
                 lastPacket &= ~(1<<i);
                 continue;
             }
-            readPacketRes = DISKIO_iReadPacket(device_fp, buff, 
+            readPacketRes = DISKIO_iReadPacket(fpDevice, buff, 
                                                lastPacket, psize, 1,
                                                &deviceInfo);
             if ( readPacketRes ) {
@@ -164,8 +167,10 @@ int main (int argc, char *argv[])
             lastPacket--;
         }
 
-        fprintf(stdout, "Packets recorded on the disk = %lu\n", (long unsigned)(lastPacket + 1) );
-        readPacketRes = DISKIO_iReadPacket(device_fp, buff, lastPacket, psize, 1, &deviceInfo);
+        fprintf(stdout, "Packets recorded on the disk = %lu (%.2f minutes)\n", 
+                (long unsigned)(lastPacket + 1),
+                (double)(lastPacket+1)/SAMPLING_RATE/60.0 );
+        readPacketRes = DISKIO_iReadPacket(fpDevice, buff, lastPacket, psize, 1, &deviceInfo);
         if (readPacketRes) {
             fprintf(stderr, "\nError reading last packet recorded on disk: return value"
                     " of DISKIO_iReadPacket() is %d\n", readPacketRes);
@@ -186,15 +191,19 @@ int main (int argc, char *argv[])
         }
 
         fprintf(stdout, "Extracting the data:\n");
-        output_fp = fopen(output_fname, "w");
-        if ( NULL == output_fp ) {
-            fprintf(stderr, "Error opening file %s to extract data to!\n", output_fname);
+        fpOutput = fopen(outputFile, "w");
+        if ( NULL == fpOutput ) {
+            fprintf(stderr, "Error opening file %s to extract data to!\n", outputFile);
             return -11;
         }
         packetIndex = 0;
         // read NUM_PACKETS at a time
         while ( (packetIndex + NUM_PACKETS) < lastPacket ) {
-            readPacketRes = DISKIO_iReadPacket(device_fp, buff, packetIndex, 
+            if ( packetIndex % PACKET_PROGRESS == 0 ) {
+                fprintf(stdout, "%4.1f%% completed\n", (float)packetIndex / (float)lastPacket * 100);
+            }
+
+            readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex, 
                                               psize, NUM_PACKETS, &deviceInfo);
             if ( readPacketRes ) {
                 fprintf(stderr, "Error reading packets %llu to %llu!\n", 
@@ -202,7 +211,7 @@ int main (int argc, char *argv[])
                         (long long unsigned)(packetIndex + NUM_PACKETS) );
                 return -12;
             }
-            bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, output_fp);
+            bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, fpOutput);
             if ( (psize*NUM_PACKETS) != bytesWritten ) {
                 fprintf(stderr, "Error %llu bytes requested to write but %llu"
                         " bytes actually written\n", 
@@ -211,17 +220,18 @@ int main (int argc, char *argv[])
                 return -13;
             }
             packetIndex += NUM_PACKETS;
+
         }
         
         // read the last block of packets
-        readPacketRes = DISKIO_iReadPacket(device_fp, buff, packetIndex, psize, 
+        readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex, psize, 
                                            lastPacket - packetIndex + 1, &deviceInfo);
         if ( readPacketRes ) {
             fprintf(stderr, "Error reading packets %llu to %llu!\n", 
                     (long long unsigned)packetIndex,
                     (long long unsigned)lastPacket );
         }
-        bytesWritten = (uint64_t)fwrite(buff, 1, psize*(lastPacket - packetIndex + 1), output_fp);
+        bytesWritten = (uint64_t)fwrite(buff, 1, psize*(lastPacket - packetIndex + 1), fpOutput);
         if ( psize*(lastPacket - packetIndex + 1) != bytesWritten ) {
             fprintf(stderr, "Error %llu bytes requested to write but %llu"
                     " bytes actually written\n", 
@@ -229,14 +239,16 @@ int main (int argc, char *argv[])
                     (long long unsigned)bytesWritten );
             return -14;
         }
-        if ( fclose(device_fp) ) {
-            fprintf(stderr, "Error closing %s after extracting data\n", device_fname);
+        if ( fclose(fpDevice) ) {
+            fprintf(stderr, "Error closing %s after extracting data\n", deviceFile);
             return -15;
         }
-        if ( fclose(output_fp) ) {
-            fprintf(stderr, "Error closing %s after extracting data\n", output_fname);
+        if ( fclose(fpOutput) ) {
+            fprintf(stderr, "Error closing %s after extracting data\n", outputFile);
             return -16;
         }
+
+        fprintf(stdout, "Done!\n");
         return 0; 
     }
 }

@@ -20,8 +20,8 @@
 //////////////////////////////////////////////////////////////////////////
 int main (int argc, char *argv[])
 {
-    char config_fname[MAX_FNAME_LENGTH];
-    char device_fname[MAX_FNAME_LENGTH];
+    char configFile[MAX_FNAME_LENGTH];
+    char deviceFile[MAX_FNAME_LENGTH];
     char str[100];
     int i, j, count;
     int readDiskRes, writeDiskRes, deviceInfoRes; 
@@ -30,7 +30,7 @@ int main (int argc, char *argv[])
     uint8_t mask;
     DeviceInfoType deviceInfo;
     FilePermissionType permission;
-    FILE *config_fp;
+    FILE *fpConfigFile;
   
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
@@ -40,7 +40,7 @@ int main (int argc, char *argv[])
 
 
     if ( 1 == argc) {
-        fprintf(stdout, "\nUsage: write_config <device file> <config file>\n");
+        fprintf(stdout, "\nUsage: write_config [DEVICE_FILENAME] [CONFIG_FILENAME\n");
         fprintf(stdout, "Example: `write_config /dev/sdb config_file.cfg`\n");
         return 1;
     }
@@ -55,13 +55,13 @@ int main (int argc, char *argv[])
         }
 
         // check file name lengths
-        strncpy(device_fname, argv[1], MAX_FNAME_LENGTH);
-        strncpy(config_fname, argv[2], MAX_FNAME_LENGTH);
-        if ( '\0' != device_fname[MAX_FNAME_LENGTH-1] ) {
+        strncpy(deviceFile, argv[1], MAX_FNAME_LENGTH);
+        strncpy(configFile, argv[2], MAX_FNAME_LENGTH);
+        if ( '\0' != deviceFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum device file name length exceeded.\n");
             return -2;
         }
-        if ( '\0' != config_fname[MAX_FNAME_LENGTH-1] ) {
+        if ( '\0' != configFile[MAX_FNAME_LENGTH-1] ) {
             fprintf(stderr, "\nMaximum config file name length exceeded.\n");
             return -3;
         }
@@ -69,19 +69,19 @@ int main (int argc, char *argv[])
         // check file permissions
         // needed to confirm that new configuration was actually written correctly
         permission = READ_ACCESS;
-        readAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        readAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( readAccessRes ) {
             fprintf(stderr, "\nError checking read permission of %s: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
-                    device_fname, readAccessRes);
+                    deviceFile, readAccessRes);
             return -4;
         }
         permission = WRITE_ACCESS;
-        writeAccessRes = DISKIO_iCheckFileAccess(device_fname, permission);
+        writeAccessRes = DISKIO_iCheckFileAccess(deviceFile, permission);
         if ( writeAccessRes ) {
             fprintf(stderr, "\nError checking write permission of %s: "
                     "return value of DISKIO_iCheckFileAccess() is %d\n",
-                    device_fname, writeAccessRes);
+                    deviceFile, writeAccessRes);
             return -5;
         }        
 
@@ -89,25 +89,25 @@ int main (int argc, char *argv[])
         // have gotten strange results when using uninitialized deviceInfo so 
         // initialize here. In general it never hurts to initialize anyway  
         memset(&deviceInfo, 0, sizeof(deviceInfo));
-        deviceInfoRes = DISKIO_iGetDeviceInfo(device_fname, &deviceInfo);
+        deviceInfoRes = DISKIO_iGetDeviceInfo(deviceFile, &deviceInfo);
         if ( deviceInfoRes ) {
             fprintf(stderr, "\nError checking device info: "
-                    "return value of DISKIO_iGetDeviceInfo()is %d\n",
+                    "return value of DISKIO_iGetDeviceInfo() is %d\n",
                     deviceInfoRes);
             return -6;
         }
 
-        config_fp = fopen(config_fname, "r");
-        if ( NULL == config_fp ) { 
+        fpConfigFile = fopen(configFile, "r");
+        if ( NULL == fpConfigFile ) { 
             fprintf(stderr, "Error no %d opening config file %s: %s\n", 
-                    errno, config_fname, strerror(errno) );
+                    errno, configFile, strerror(errno) );
             return -7;
         }
         for (i = 0; i < deviceInfo.sectorSize; i++) {
             buff[i] = 0;
         } 
         for (i = 0; i < NUM_CHANNELS_PER_MODULE; i++) {
-            fscanf (config_fp, "%s", str);
+            fscanf (fpConfigFile, "%s", str);
             mask = 0;
             if (strlen(str) == NUM_MODULES) {
                 for (j = 0; j < NUM_MODULES; j++) {
@@ -120,30 +120,30 @@ int main (int argc, char *argv[])
         }
 
         fprintf(stdout, "\nOverwriting card configuration data with data from file %s!\n", 
-                config_fname);
+                configFile);
         // write configuration sector
-        writeDiskRes = DISKIO_iWriteDisk(device_fname, buff, 0, 1, &deviceInfo);
+        writeDiskRes = DISKIO_iWriteDisk(deviceFile, buff, 0, 1, &deviceInfo);
         if ( readDiskRes ) {
             fprintf(stderr, "\nError writing new configuration: "
                     "return value of DISKIO_iWriteDisk() is %d\n",
                     readDiskRes);
-            return -7;
-        }
-
-        if ( fclose(config_fp) ) {
-            fprintf(stderr, "\nError no %d closing config file: %s"
-                    " Recommend trying again to be safe.\n", 
-                    errno, strerror(errno) );
             return -8;
         }
 
+        if ( fclose(fpConfigFile) ) {
+            fprintf(stderr, "\nError no %d closing config file: %s"
+                    " Recommend trying again to be safe.\n", 
+                    errno, strerror(errno) );
+            return -9;
+        }
+
         // confirm that new configuration was written correctly
-        readDiskRes = DISKIO_iReadDisk(device_fname, buff, 0, 1, &deviceInfo);
+        readDiskRes = DISKIO_iReadDisk(deviceFile, buff, 0, 1, &deviceInfo);
         if ( readDiskRes ) {
             fprintf(stderr, "\nError confirming that new configuration was"
                     " written correctly: return value of DISKIO_iReadDisk() is %d\n",
                     readDiskRes);
-            return -9;
+            return -10;
         }
 
         fprintf(stdout, "\nNew configuration:\n");

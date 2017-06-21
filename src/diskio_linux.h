@@ -28,11 +28,11 @@ int DISKIO_iCheckFileAccess(char *filename, FilePermissionType permission);
 
 int DISKIO_iGetDeviceInfo(char *filename, DeviceInfoType *deviceInfoObj);
 
-int DISKIO_iReadDisk(char *filename, uint8_t *buff, uint32_t sector, uint32_t numSectors, 
-                     DeviceInfoType *deviceInfoObj);
+int DISKIO_iReadDisk(char *filename, uint8_t *buff, uint32_t sector, 
+                     uint32_t numSectors, DeviceInfoType *deviceInfoObj);
 
-int DISKIO_iWriteDisk(char *filename, uint8_t *buff, uint32_t sector, uint32_t numSectors, 
-                      DeviceInfoType *deviceInfoObj);
+int DISKIO_iWriteDisk(char *filename, uint8_t *buff, uint32_t sector, 
+                      uint32_t numSectors, DeviceInfoType *deviceInfoObj);
 
 int DISKIO_iReadPacket(FILE *device_fp, uint8_t *buff, uint64_t startPacketIndex, 
                        uint16_t packetSize, uint64_t numPackets, 
