@@ -27,7 +27,7 @@ Check the console output to confirm success
 
 ### Extracting the data
 ```
-sudo ./sd\_card\_extract /dev/sdc install\_06-21-2017\_sd07.dat 
+sudo ./sd_card_extract /dev/sdc install_06-21-2017_sd07.dat 
 ```
 
 Other utilities such as read\_config and pcheck can be used to inspect the 
