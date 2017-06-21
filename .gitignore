@@ -1,0 +1,7 @@
+# ignore temporary files 
+*~
+*.swp
+
+*.docx
+*.docx#
+
