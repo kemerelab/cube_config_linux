@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <linux/fs.h> // BLKSSZGET, BLKGETSIZE64 
 #include <fcntl.h>    // O_RDONLY, O_NONBLOCK
+#include <sys/ioctl.h>
 #include "diskio_linux.h"
 
 //////////////////////////////////////////////////////////////////////////
