@@ -6,7 +6,7 @@
 
 #define BUFFER_LENGTH 65536
 #define MAX_FNAME_LENGTH 1000
-#define NUM_PACKETS 128       // number of packets to read at a time
+#define NUM_PACKETS 1       // number of packets to read at a time
 #define PACKET_PROGRESS 16777216
 #define SAMPLING_RATE 30000   // samples/sec
 
@@ -208,16 +208,26 @@ int main (int argc, char *argv[])
             if ( readPacketRes ) {
                 fprintf(stderr, "Error reading packets %llu to %llu!\n", 
                         (long long unsigned)packetIndex,
-                        (long long unsigned)(packetIndex + NUM_PACKETS) );
+                        (long long unsigned)(packetIndex + NUM_PACKETS - 1) );
                 return -12;
             }
-            bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, fpOutput);
-            if ( (psize*NUM_PACKETS) != bytesWritten ) {
+
+            // check that value of start byte is as expected for sd recording
+            if ( buff[0] == 0x55 ) {
+                bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, fpOutput);
+                if ( (psize*NUM_PACKETS) != bytesWritten ) {
                 fprintf(stderr, "Error %llu bytes requested to write but %llu"
                         " bytes actually written\n", 
                         (long long unsigned)(psize*NUM_PACKETS), 
                         (long long unsigned)bytesWritten );
                 return -13;
+                }
+            }
+            else {
+                fprintf(stderr, "Bad packet found. Packet index: %llu, \
+                        byte[0] value: %2x\n",
+                        (long long unsigned)packetIndex,
+                        (unsigned)buff[0] );
             }
             packetIndex += NUM_PACKETS;
 
