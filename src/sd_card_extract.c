@@ -7,7 +7,7 @@
 #define BUFFER_LENGTH 65536
 #define MAX_FNAME_LENGTH 1000
 #define NUM_PACKETS 1       // number of packets to read at a time
-#define PACKET_PROGRESS 16777216
+#define PROGRESS_PERCENT 10
 #define SAMPLING_RATE 30000   // samples/sec
 
 //////////////////////////////////////////////////////////////////////////
@@ -26,7 +26,7 @@ int main (int argc, char *argv[])
     uint8_t buff[BUFFER_LENGTH];
     uint32_t shift, psize;
     uint64_t bytesWritten;
-    uint64_t lastPacket, maxNumPackets;
+    uint64_t lastPacket, maxNumPackets, nPacketsProgress;
     uint64_t nDroppedPackets;
     uint64_t nDroppedPacketsCounted, packetIndex;
     FilePermissionType permission;
@@ -197,9 +197,14 @@ int main (int argc, char *argv[])
             return -11;
         }
         packetIndex = 0;
+
+        // will be used to display how frequently progress occurs 
+        // integer division, will not show digits after the decimal
+        nPacketsProgress = lastPacket / PROGRESS_PERCENT;
+        
         // read NUM_PACKETS at a time
         while ( (packetIndex + NUM_PACKETS) < lastPacket ) {
-            if ( packetIndex % PACKET_PROGRESS == 0 ) {
+            if ( packetIndex % nPacketsProgress == 0 ) {
                 fprintf(stdout, "%4.1f%% completed\n", (float)packetIndex / (float)lastPacket * 100);
             }
 
