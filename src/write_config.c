@@ -40,7 +40,7 @@ int main (int argc, char *argv[])
 
 
     if ( 1 == argc) {
-        fprintf(stdout, "\nUsage: write_config [DEVICE_FILENAME] [CONFIG_FILENAME\n");
+        fprintf(stdout, "\nUsage: write_config [DEVICE_FILENAME] [CONFIG_FILENAME]\n");
         fprintf(stdout, "Example: `write_config /dev/sdb config_file.cfg`\n");
         return 1;
     }
