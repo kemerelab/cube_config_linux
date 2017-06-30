@@ -222,9 +222,11 @@ int main (int argc, char *argv[])
                 bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, fpOutput);
                 if ( (psize*NUM_PACKETS) != bytesWritten ) {
                 fprintf(stderr, "Error %llu bytes requested to write but %llu"
-                        " bytes actually written\n", 
+                        " bytes actually written when writing packets %llu to %llu\n", 
                         (long long unsigned)(psize*NUM_PACKETS), 
-                        (long long unsigned)bytesWritten );
+                        (long long unsigned)bytesWritten,
+                        (long long unsigned)packetIndex,
+                        (long long unsigned)(packetIndex + NUM_PACKETS -1) );
                 return -13;
                 }
             }
@@ -249,9 +251,11 @@ int main (int argc, char *argv[])
         bytesWritten = (uint64_t)fwrite(buff, 1, psize*(lastPacket - packetIndex + 1), fpOutput);
         if ( psize*(lastPacket - packetIndex + 1) != bytesWritten ) {
             fprintf(stderr, "Error %llu bytes requested to write but %llu"
-                    " bytes actually written\n", 
+                    " bytes actually written when writing packets %llu to %llu\n", 
                     (long long unsigned)(psize*(lastPacket - packetIndex +1)), 
-                    (long long unsigned)bytesWritten );
+                    (long long unsigned)bytesWritten,
+                    (long long unsigned)packetIndex,
+                    (long long unsigned)lastPacket );
             return -14;
         }
         if ( fclose(fpDevice) ) {
