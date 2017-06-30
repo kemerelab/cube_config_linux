@@ -204,6 +204,7 @@ int main (int argc, char *argv[])
 
         // will be used to display how frequently progress occurs 
         nPacketsProgress = floor(0.01 * lastPacket * PROGRESS_PERCENT);
+
         
         // read NUM_PACKETS at a time
         while ( (packetIndex + NUM_PACKETS) < lastPacket ) {
