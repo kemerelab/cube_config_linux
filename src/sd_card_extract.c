@@ -24,6 +24,9 @@ int main (int argc, char *argv[])
     char deviceFile[MAX_FNAME_LENGTH];
     char outputFile[MAX_FNAME_LENGTH];
     int i, readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
+    int startByteInd = 0;
+    int rfSyncInd = 2;
+    int rfSyncCt = 0;
     uint8_t buff[BUFFER_LENGTH];
     uint32_t shift, psize;
     uint64_t bytesWritten;
@@ -153,7 +156,7 @@ int main (int argc, char *argv[])
                         readPacketRes);
                 return -9;
             } 
-            else if (buff[0] != 0x55) {
+            else if (buff[startByteInd] != 0x55) {
                 // packet that was just read is greater than the actual last
                 // packet since the starting byte of the packet is not 0x55. 
                 // so set bit i to 0, set bits NOT i to 1, and bit wise AND 
@@ -218,21 +221,29 @@ int main (int argc, char *argv[])
             }
 
             // check that value of start byte is as expected for sd recording
-            if ( buff[0] == 0x55 ) {
+            // check for sync byte as well
+            // note that this check is complete only if we read one packet at a time
+            // since we are inspecting only 2 fixed locations in the buffer! But 
+            // won't be reading more than one packet at a time for the foreseeable
+            // future
+            if ( buff[startByteInd] == 0x55 ) {
+                if ( buff[rfSyncInd] == 0x1 ) {
+                    ++rfSyncCt;
+                }
                 bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, fpOutput);
                 if ( (psize*NUM_PACKETS) != bytesWritten ) {
-                fprintf(stderr, "Error %llu bytes requested to write but %llu"
+                fprintf(stderr, "Error: %llu bytes requested to write but %llu"
                         " bytes actually written when writing packets %llu to %llu\n", 
                         (long long unsigned)(psize*NUM_PACKETS), 
                         (long long unsigned)bytesWritten,
                         (long long unsigned)packetIndex,
-                        (long long unsigned)(packetIndex + NUM_PACKETS -1) );
+                        (long long unsigned)(packetIndex + NUM_PACKETS - 1) );
                 return -13;
                 }
             }
             else {
                 fprintf(stderr, "Bad packet found. Packet index: %llu, \
-                        byte[0] value: %2x\n",
+                        byte[0] value: %2x. Not saving packet to output file\n",
                         (long long unsigned)packetIndex,
                         (unsigned)buff[0] );
             }
@@ -265,6 +276,14 @@ int main (int argc, char *argv[])
         if ( fclose(fpOutput) ) {
             fprintf(stderr, "Error closing %s after extracting data\n", outputFile);
             return -16;
+        }
+
+        // RF sync values found
+        if ( rfSyncCt ) {
+            fprintf(stdout, "\nFound %d RF sync values\n", rfSyncCt);
+        }
+        else {
+            fprintf(stderr, "\nError: Found 0 RF sync values!\n");
         }
 
         fprintf(stdout, "Done!\n");
