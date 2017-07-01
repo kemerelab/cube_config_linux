@@ -8,8 +8,13 @@
 #define BUFFER_LENGTH 65536
 #define MAX_FNAME_LENGTH 1000
 #define NUM_PACKETS 1       // number of packets to read at a time
-#define PROGRESS_PERCENT 10
+#define PROGRESS_PERCENT 5
 #define SAMPLING_RATE 30000   // samples/sec
+#define START_BYTE_IND 0
+#define FLAG_BYTE_IND 2
+#define TIMESTAMP_START_IND 10
+#define START_BYTE_VAL 0x55
+#define RF_VALID_VAL 0x1
 
 //////////////////////////////////////////////////////////////////////////
 // Function     : main()
@@ -24,9 +29,7 @@ int main (int argc, char *argv[])
     char deviceFile[MAX_FNAME_LENGTH];
     char outputFile[MAX_FNAME_LENGTH];
     int i, readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
-    int startByteInd = 0;
-    int rfSyncInd = 2;
-    int rfSyncCt = 0;
+    int rfSyncCt;
     uint8_t buff[BUFFER_LENGTH];
     uint32_t shift, psize;
     uint64_t bytesWritten;
@@ -101,15 +104,18 @@ int main (int argc, char *argv[])
             return -6;
         }
         // check first packet header
-        if (buff[0] != 0x55) {
+        if (buff[START_BYTE_IND] != START_BYTE_VAL) {
             fprintf(stdout, "\nNo start packet found!\n");
             return -7;
         }
         // search for the next packet header, assuming we have a 10-byte header 
         // file and thus the second packet timestamp will begin at the 11th byte
-        while (((buff[i] != 0x55) || (buff[i+10] != 0x01) || 
-                (buff[i+11] != 0x00) || (buff[i+12] != 0x00) || 
-                (buff[i+13] != 0x00)) && (i++ < deviceInfo.sectorSize));
+        while (((buff[i] != START_BYTE_VAL) ||
+                (buff[i + TIMESTAMP_START_IND] != 0x01) ||
+                (buff[i + TIMESTAMP_START_IND + 1] != 0x00) ||
+                (buff[i + TIMESTAMP_START_IND + 2] != 0x00) ||
+                (buff[i + TIMESTAMP_START_IND + 3] != 0x00)) &&
+                (i++ < deviceInfo.sectorSize));
         if (i >= deviceInfo.sectorSize) {
             fprintf(stderr, "\nCan't find the second packet start!\n");
             return -6;
@@ -156,13 +162,13 @@ int main (int argc, char *argv[])
                         readPacketRes);
                 return -9;
             } 
-            else if (buff[startByteInd] != 0x55) {
+            else if (buff[START_BYTE_IND] != START_BYTE_VAL) {
                 // packet that was just read is greater than the actual last
-                // packet since the starting byte of the packet is not 0x55. 
-                // so set bit i to 0, set bits NOT i to 1, and bit wise AND 
-                // to keep all NOT i bits in lastPacket the same as before. 
-                // Next iteration of for loop will check bit i-1 to see 
-                // whether there is a valid packet.
+                // packet since the starting byte of the packet is not 
+                // START_BYTE_VAL. so set bit i to 0, set bits NOT i to 1, 
+                // and bit wise AND to keep all NOT i bits in lastPacket the 
+                // same as before. Next iteration of for loop will check 
+                // bit i-1 to see whether there is a valid packet.
                 lastPacket &= ~(1<<i);
             }
         }
@@ -171,7 +177,7 @@ int main (int argc, char *argv[])
             lastPacket--;
         }
 
-        fprintf(stdout, "Packets recorded on the disk = %lu (%.2f minutes)\n", 
+        fprintf(stdout, "Packets recorded on the disk = %lu (%.2f minutes)\n",
                 (long unsigned)(lastPacket + 1),
                 (double)(lastPacket+1)/SAMPLING_RATE/60.0 );
         readPacketRes = DISKIO_iReadPacket(fpDevice, buff, lastPacket, psize, 1, &deviceInfo);
@@ -183,7 +189,11 @@ int main (int argc, char *argv[])
         
         // if there are dropped packets, the timestamp of the last packet will be greater
         // than the number of packets recorded on disk
-        nDroppedPackets = (buff[13]<<24 | buff[12]<<16 | buff[11]<<8 | buff[10]) - lastPacket;
+        nDroppedPackets = (buff[TIMESTAMP_START_IND + 3] << 24 |
+                           buff[TIMESTAMP_START_IND + 2] << 16 |
+                           buff[TIMESTAMP_START_IND + 1] <<  8 |
+                           buff[TIMESTAMP_START_IND])
+                           - lastPacket;
         if ( nDroppedPackets ) {
             fprintf(stdout, "Dropped packets = %llu (%.2f msec = %.2f sec)\n", 
                     (long long unsigned)nDroppedPackets, 
@@ -204,7 +214,6 @@ int main (int argc, char *argv[])
 
         // will be used to display how frequently progress occurs 
         nPacketsProgress = floor(0.01 * lastPacket * PROGRESS_PERCENT);
-
         
         // read NUM_PACKETS at a time
         while ( (packetIndex + NUM_PACKETS) < lastPacket ) {
@@ -215,27 +224,22 @@ int main (int argc, char *argv[])
             readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex, 
                                               psize, NUM_PACKETS, &deviceInfo);
             if ( readPacketRes ) {
-                fprintf(stderr, "Error reading packets %llu to %llu!\n", 
+                fprintf(stderr, "Error reading packets %llu to %llu!\n",
                         (long long unsigned)packetIndex,
                         (long long unsigned)(packetIndex + NUM_PACKETS - 1) );
                 return -12;
             }
 
             // check that value of start byte is as expected for sd recording
-            // check for sync byte as well
-            // note that this check is complete only if we read one packet at a time
-            // since we are inspecting only 2 fixed locations in the buffer! But 
-            // won't be reading more than one packet at a time for the foreseeable
-            // future
-            if ( buff[startByteInd] == 0x55 ) {
-                if ( buff[rfSyncInd] == 0x1 ) {
+            if ( buff[START_BYTE_IND] == START_BYTE_VAL ) {
+                if ( buff[FLAG_BYTE_IND] == RF_VALID_VAL ) {
                     ++rfSyncCt;
                 }
                 bytesWritten = (uint64_t)fwrite(buff, 1, psize*NUM_PACKETS, fpOutput);
                 if ( (psize*NUM_PACKETS) != bytesWritten ) {
                 fprintf(stderr, "Error: %llu bytes requested to write but %llu"
-                        " bytes actually written when writing packets %llu to %llu\n", 
-                        (long long unsigned)(psize*NUM_PACKETS), 
+                        " bytes actually written when writing packets %llu to %llu\n",
+                        (long long unsigned)(psize*NUM_PACKETS),
                         (long long unsigned)bytesWritten,
                         (long long unsigned)packetIndex,
                         (long long unsigned)(packetIndex + NUM_PACKETS - 1) );
@@ -244,9 +248,10 @@ int main (int argc, char *argv[])
             }
             else {
                 fprintf(stderr, "Bad packet found. Packet index: %llu, \
-                        byte[0] value: %2x. Not saving packet to output file\n",
+                        byte[%u] value: %2x. Not saving bad packet to output file\n",
                         (long long unsigned)packetIndex,
-                        (unsigned)buff[0] );
+                        (unsigned)START_BYTE_IND,
+                        (unsigned)buff[START_BYTE_IND] );
             }
             packetIndex += NUM_PACKETS;
 
@@ -259,6 +264,7 @@ int main (int argc, char *argv[])
             fprintf(stderr, "Error reading packets %llu to %llu!\n", 
                     (long long unsigned)packetIndex,
                     (long long unsigned)lastPacket );
+            return -14;
         }
         bytesWritten = (uint64_t)fwrite(buff, 1, psize*(lastPacket - packetIndex + 1), fpOutput);
         if ( psize*(lastPacket - packetIndex + 1) != bytesWritten ) {
@@ -268,15 +274,15 @@ int main (int argc, char *argv[])
                     (long long unsigned)bytesWritten,
                     (long long unsigned)packetIndex,
                     (long long unsigned)lastPacket );
-            return -14;
+            return -15;
         }
         if ( fclose(fpDevice) ) {
             fprintf(stderr, "Error closing %s after extracting data\n", deviceFile);
-            return -15;
+            return -16;
         }
         if ( fclose(fpOutput) ) {
             fprintf(stderr, "Error closing %s after extracting data\n", outputFile);
-            return -16;
+            return -17;
         }
 
         // RF sync values found

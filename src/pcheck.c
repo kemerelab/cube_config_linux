@@ -2,11 +2,19 @@
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
+#include <math.h>
 #include "diskio_linux.h"
 
 #define BUFFER_LENGTH 32768
 #define MAX_FNAME_LENGTH 1000
+#define NUM_PACKETS 1
 #define SAMPLING_RATE 30000   // samples/sec
+#define PROGRESS_PERCENT 5
+#define START_BYTE_IND 0
+#define FLAG_BYTE_IND 2
+#define TIMESTAMP_START_IND 10
+#define START_BYTE_VAL 0x55
+#define RF_VALID_VAL 0x1
 
 //////////////////////////////////////////////////////////////////////////
 // Function     : main()
@@ -21,15 +29,19 @@ int main (int argc, char *argv[])
 {
     char deviceFile[MAX_FNAME_LENGTH];
     int i, readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
+    int rfSyncCt = 0;
     uint8_t buff[BUFFER_LENGTH];
     uint32_t shift, psize;
-    uint64_t lastPacket, maxNumPackets;
+    uint32_t lastTimestamp = 0, currentTimestamp = 0;
+    uint64_t lastPacket, maxNumPackets, nPacketsProgress;
     uint64_t nDroppedPackets, timestampPacketIndexDiff;
     uint64_t nDroppedPacketsCounted, packetIndex;
     FilePermissionType permission;
     DeviceInfoType deviceInfo;
     FILE *fpDevice;
   
+    fprintf(stdout,"lastTimestamp %lu\n", (long unsigned)lastTimestamp);
+    fprintf(stdout, "currentTimestamp %lu\n", (long unsigned)currentTimestamp);
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
@@ -84,15 +96,18 @@ int main (int argc, char *argv[])
             return -4;
         }
         // check first packet header
-        if (buff[0] != 0x55) {
+        if (buff[START_BYTE_IND] != START_BYTE_VAL) {
             fprintf(stdout, "\nNo start packet found!\n");
             return -5;
         }
         // search for the next packet header, assuming we have a 10-byte header 
         // file and thus the second packet timestamp will begin at the 11th byte
-        while (((buff[i] != 0x55) || (buff[i+10] != 0x01) || 
-                (buff[i+11] != 0x00) || (buff[i+12] != 0x00) || 
-                (buff[i+13] != 0x00)) && (i++ < deviceInfo.sectorSize));
+        while (((buff[i] != START_BYTE_VAL) ||
+                (buff[i + TIMESTAMP_START_IND] != 0x01) ||
+                (buff[i + TIMESTAMP_START_IND + 1] != 0x00) ||
+                (buff[i + TIMESTAMP_START_IND + 2] != 0x00) ||
+                (buff[i + TIMESTAMP_START_IND + 3] != 0x00)) &&
+                (i++ < deviceInfo.sectorSize));
         if (i >= deviceInfo.sectorSize) {
             fprintf(stderr, "\nCan't find the second packet start!\n");
             return -6;
@@ -130,23 +145,23 @@ int main (int argc, char *argv[])
                 lastPacket &= ~(1<<i);
                 continue;
             }
-            readPacketRes = DISKIO_iReadPacket(fpDevice, buff, 
+            readPacketRes = DISKIO_iReadPacket(fpDevice, buff,
                                                lastPacket, psize, 1,
                                                &deviceInfo);
             if ( readPacketRes ) {
                 fprintf(stderr, "\nError reading packet %llu: return value"
-                        " of DISKIO_iReadPacket() is %d\n", 
-                        (long long unsigned)lastPacket, 
+                        " of DISKIO_iReadPacket() is %d\n",
+                        (long long unsigned)lastPacket,
                         readPacketRes);
                 return -8;
             } 
-            else if (buff[0] != 0x55) {
+            else if (buff[START_BYTE_IND] != START_BYTE_VAL) {
                 // packet that was just read is greater than the actual last
-                // packet since the starting byte of the packet is not 0x55. 
-                // so set bit i to 0, set bits NOT i to 1, and bit wise AND 
-                // to keep all NOT i bits in lastPacket the same as before. 
-                // Next iteration of for loop will check bit i-1 to see 
-                // whether there is a valid packet.
+                // packet since the starting byte of the packet is not 
+                // START_BYTE_VAL. so set bit i to 0, set bits NOT i to 1, 
+                // and bit wise AND to keep all NOT i bits in lastPacket the 
+                // same as before. Next iteration of for loop will check 
+                // bit i-1 to see whether there is a valid packet.
                 lastPacket &= ~(1<<i);
             }
         }
@@ -155,7 +170,7 @@ int main (int argc, char *argv[])
             lastPacket--;
         }
 
-        fprintf(stdout, "Packets recorded on the disk = %lu (%.2f minutes)\n", 
+        fprintf(stdout, "Packets recorded on the disk = %lu (%.2f minutes)\n",
                 (long unsigned)(lastPacket + 1), 
                 (double)(lastPacket + 1)/SAMPLING_RATE/60.0 );
         readPacketRes = DISKIO_iReadPacket(fpDevice, buff, lastPacket, psize, 1, &deviceInfo);
@@ -164,66 +179,89 @@ int main (int argc, char *argv[])
                     " of DISKIO_iReadPacket() is %d\n", readPacketRes);
             return -9;
         }
-        
+
         // if there are dropped packets, the timestamp of the last packet will be greater
         // than the number of packets recorded on disk
-        nDroppedPackets = (buff[13]<<24 | buff[12]<<16 | buff[11]<<8 | buff[10]) - lastPacket;
-        if ( nDroppedPackets ) {
-            fprintf(stdout, "Dropped packets = %llu (%.2f msec = %.2f sec)\n", 
-                    (long long unsigned)nDroppedPackets, 
-                    (float)nDroppedPackets / SAMPLING_RATE * 1000,
-                    (float)nDroppedPackets / SAMPLING_RATE);
-            fprintf(stdout, "Locating the gaps:\n");
-            nDroppedPacketsCounted = 0;
-            while ( nDroppedPacketsCounted < nDroppedPackets ) {
-                packetIndex = 0;
-                for (i = shift; i >= 0; i--) {
-                    packetIndex |= (1<<i);
-                    if (packetIndex > lastPacket) {
-                        packetIndex &= ~(1<<i);
-                        continue;
-                    }
-                    readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex,
-                                                       psize, 1, &deviceInfo);
-                    if ( readPacketRes ) {
-                        fprintf(stderr, "Error reading packet %llu, return value of"
-                                " DISKIO_iReadPacket() is %d\n",
-                                (long long unsigned)packetIndex, readPacketRes );
-                        break;
-                    } 
-                    else {
-                        timestampPacketIndexDiff = (buff[13]<<24 | buff[12]<<16 | buff[11]<<8 | buff[10]) 
-                                                   - packetIndex;
-                        if (timestampPacketIndexDiff > nDroppedPacketsCounted) {
-                            packetIndex &= ~(1<<i);
-                        }
-                    }
-                }
-                readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex + 1, 
-                                                   psize, 1, &deviceInfo);
-                if ( readPacketRes ) {
-                    fprintf(stderr, "Error reading packet %llu, return value of"
-                            " DISKIO_iReadPacket() is %d\n",
-                            (long long unsigned)packetIndex + 1, readPacketRes );
-                    break;
-                } 
-                else {
-                    timestampPacketIndexDiff = (buff[13]<<24 | buff[12]<<16 | buff[11]<<8 | buff[10]) 
-                                               - (packetIndex + 1);
-                    fprintf(stdout, "Gap after packet %llu (%llu packets long)\n", 
-                            (long long unsigned)packetIndex, 
-                            (long long unsigned)(timestampPacketIndexDiff - nDroppedPacketsCounted) );
-                    nDroppedPacketsCounted = timestampPacketIndexDiff;
+        nDroppedPackets = (buff[TIMESTAMP_START_IND + 3] << 24 |
+                           buff[TIMESTAMP_START_IND + 2] << 16 |
+                           buff[TIMESTAMP_START_IND + 1] <<  8 |
+                           buff[TIMESTAMP_START_IND])
+                           - lastPacket;
+
+        fprintf(stdout, "Finding the gaps...\n");
+        fprintf(stdout, "Finding number of RF sync points...\n");
+            
+        // will be used to display how frequently progress occurs 
+        nPacketsProgress = floor(0.01 * lastPacket * PROGRESS_PERCENT);
+
+        // read NUM_PACKETS at a time
+        while ( (packetIndex + NUM_PACKETS) < lastPacket ) {
+            if ( packetIndex % nPacketsProgress == 0 ) {
+                fprintf(stdout, "%4.1f%% of packets read\n", (float)packetIndex / (float)lastPacket * 100);
+            }
+
+            readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex,
+                                              psize, NUM_PACKETS, &deviceInfo);
+            if ( readPacketRes ) {
+                fprintf(stderr, "Error reading packets %llu to %llu!\n",
+                        (long long unsigned)packetIndex,
+                        (long long unsigned)(packetIndex + NUM_PACKETS - 1) );
+                return -10;
+            }
+
+            // check that value of start byte is as expected for sd recording
+            if ( buff[START_BYTE_IND] == START_BYTE_VAL ) {
+                if ( buff[FLAG_BYTE_IND] == RF_VALID_VAL ) {
+                    ++rfSyncCt;
                 }
             }
+            else {
+                fprintf(stderr, "Bad packet found. Packet index: %llu, \
+                        byte[%u] value: %2x\n",
+                        (long long unsigned)packetIndex,
+                        (unsigned)START_BYTE_IND,
+                        (unsigned)buff[START_BYTE_IND] );
+            }
+
+            currentTimestamp = buff[TIMESTAMP_START_IND + 3] << 24 |
+                               buff[TIMESTAMP_START_IND + 2] << 16 |
+                               buff[TIMESTAMP_START_IND + 1] <<  8 |
+                               buff[TIMESTAMP_START_IND];
+            if ( packetIndex && ((currentTimestamp - lastTimestamp) > 1) ) {
+                fprintf(stdout, "%lu dropped packets after packet %lu \n",
+                        (long unsigned)(currentTimestamp - lastTimestamp - 1),
+                        (long unsigned)(packetIndex - 1) );
+            }
+            lastTimestamp = currentTimestamp;
+            packetIndex += NUM_PACKETS;
+
         }
-        else { 
-            fprintf(stdout, "No dropped packets\n");
+        
+        // read the last block of packets
+        readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex, psize,
+                                           lastPacket - packetIndex + 1, &deviceInfo);
+        if ( readPacketRes ) {
+            fprintf(stderr, "Error reading packets %llu to %llu!\n",
+                    (long long unsigned)packetIndex,
+                    (long long unsigned)lastPacket );
+            return -11;
         }
+
         if ( fclose(fpDevice) ) {
-            fprintf(stderr, "Error closing %s after reading packets\n", deviceFile);
-            return -10;
+            fprintf(stderr, "Error closing %s after extracting data\n", deviceFile);
+            return -12;
         }
+
+        // RF sync values found
+        if ( rfSyncCt ) {
+            fprintf(stdout, "\nFound %d RF sync values\n", rfSyncCt);
+        }
+        else {
+            fprintf(stderr, "\nError: Found 0 RF sync values!\n");
+        }
+
+        fprintf(stdout, "\nDone!\n");
         return 0; 
+
     }
 }
