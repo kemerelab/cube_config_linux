@@ -108,8 +108,7 @@ int main (int argc, char *argv[])
             fprintf(stdout, "\nNo start packet found!\n");
             return -7;
         }
-        // search for the next packet header, assuming we have a 10-byte header 
-        // file and thus the second packet timestamp will begin at the 11th byte
+        // search for the next packet header
         while (((buff[i] != START_BYTE_VAL) ||
                 (buff[i + TIMESTAMP_START_IND] != 0x01) ||
                 (buff[i + TIMESTAMP_START_IND + 1] != 0x00) ||

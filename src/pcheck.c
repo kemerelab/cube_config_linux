@@ -39,9 +39,7 @@ int main (int argc, char *argv[])
     FilePermissionType permission;
     DeviceInfoType deviceInfo;
     FILE *fpDevice;
-  
-    fprintf(stdout,"lastTimestamp %lu\n", (long unsigned)lastTimestamp);
-    fprintf(stdout, "currentTimestamp %lu\n", (long unsigned)currentTimestamp);
+
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
@@ -100,8 +98,7 @@ int main (int argc, char *argv[])
             fprintf(stdout, "\nNo start packet found!\n");
             return -5;
         }
-        // search for the next packet header, assuming we have a 10-byte header 
-        // file and thus the second packet timestamp will begin at the 11th byte
+        // search for the next packet header
         while (((buff[i] != START_BYTE_VAL) ||
                 (buff[i + TIMESTAMP_START_IND] != 0x01) ||
                 (buff[i + TIMESTAMP_START_IND + 1] != 0x00) ||
@@ -187,6 +184,15 @@ int main (int argc, char *argv[])
                            buff[TIMESTAMP_START_IND + 1] <<  8 |
                            buff[TIMESTAMP_START_IND])
                            - lastPacket;
+        if ( nDroppedPackets ) { 
+            fprintf(stdout, "Dropped packets = %llu (%.2f msec = %.2f sec)\n",
+                    (long long unsigned)nDroppedPackets,
+                    (float)nDroppedPackets / SAMPLING_RATE * 1000,
+                    (float)nDroppedPackets / SAMPLING_RATE);
+        }
+        else { 
+            fprintf(stdout, "No dropped packets\n");
+        }
 
         fprintf(stdout, "Finding the gaps...\n");
         fprintf(stdout, "Finding number of RF sync points...\n");
