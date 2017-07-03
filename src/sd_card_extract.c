@@ -246,8 +246,8 @@ int main (int argc, char *argv[])
                 }
             }
             else {
-                fprintf(stderr, "Bad packet found. Packet index: %llu, \
-                        byte[%u] value: %2x. Not saving bad packet to output file\n",
+                fprintf(stderr, "Bad packet found. Packet index: %llu, "
+                        "byte[%u] value: %2x. Not saving bad packet to output file\n",
                         (long long unsigned)packetIndex,
                         (unsigned)START_BYTE_IND,
                         (unsigned)buff[START_BYTE_IND] );
