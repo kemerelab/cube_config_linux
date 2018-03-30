@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <math.h>
+#include <time.h>
 #include "diskio_linux.h"
 
 #define BUFFER_LENGTH 65536
@@ -15,6 +16,7 @@
 #define TIMESTAMP_START_IND 10
 #define START_BYTE_VAL 0x55
 #define RF_VALID_VAL 0x1
+#define SEC_PER_MIN 60
 
 //////////////////////////////////////////////////////////////////////////
 // Function     : main()
@@ -30,6 +32,7 @@ int main (int argc, char *argv[])
     char outputFile[MAX_FNAME_LENGTH];
     int i, readAccessRes, deviceInfoRes, readPacketRes, readDiskRes;
     int rfSyncCt;
+    time_t startTime;
     uint8_t buff[BUFFER_LENGTH];
     uint32_t shift, psize;
     uint64_t bytesWritten;
@@ -43,6 +46,8 @@ int main (int argc, char *argv[])
     // turn off output buffering
     setvbuf(stdout, 0, _IONBF, 0);
     setvbuf(stderr, 0, _IONBF, 0);
+
+    startTime = time(NULL);
 
     fprintf(stdout, "\n*** sd_card_extract 1.0 ***\n");
 
@@ -217,7 +222,9 @@ int main (int argc, char *argv[])
         // read NUM_PACKETS at a time
         while ( (packetIndex + NUM_PACKETS) < lastPacket ) {
             if ( packetIndex % nPacketsProgress == 0 ) {
-                fprintf(stdout, "%4.1f%% completed\n", (float)packetIndex / (float)lastPacket * 100);
+                fprintf(stdout, "%5.1f%% completed, elapsed time: %5.1f minutes\n", 
+                       (float)packetIndex / (float)lastPacket * 100,
+                       (float)(time(NULL) - startTime)/SEC_PER_MIN );
             }
 
             readPacketRes = DISKIO_iReadPacket(fpDevice, buff, packetIndex, 
